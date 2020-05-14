@@ -1,0 +1,1 @@
+case study for learning about adverse drug events from public FDA repo
