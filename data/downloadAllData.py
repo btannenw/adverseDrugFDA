@@ -29,7 +29,7 @@ for partition in drugEventJSON['partitions']:
     json   = partition['file'].split(' (')[0].replace(' ', '-')
     filename = partition['file'].split('/')[-1]
     
-    totalSize = float(partition['size_mb'])
+    totalSize += float(partition['size_mb'])
     processedRecords += int(partition['records'])
 
     if subDir not in subDirs:
