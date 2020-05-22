@@ -235,7 +235,7 @@ class processOpenFDA:
             return np.nan
 
         
-    def getPatientData(patientInfo, categoryKey, dataKey):
+    def getPatientData(self, patientInfo, categoryKey, dataKey):
         """function to impute some dummy info for missing fields"""
 
         dfValue = []
@@ -312,7 +312,7 @@ class processOpenFDA:
         self.df_all['pharm_class_epc'] = self.df_all.apply( lambda x: self.getDrugData( x['patient'], 'drug', 'openfda', 'pharm_class_epc'), axis=1)
         self.df_all['drugActiveSubstance'] = self.df_all.apply( lambda x: self.getDrugData( x['patient'], 'drug', 'activesubstance', 'activesubstancename'), axis=1)
 
-        self.df_all = self.df_all.dropna(subset=['drugSubstanceName']).drugSubstanceName.value_counts()
+        self.df_all = self.df_all.dropna(subset=['drugSubstanceName'])
         print("Number entries (w/ substance data): {}".format(len(self.df_all)))
 
 
@@ -320,6 +320,7 @@ class processOpenFDA:
         """ function for some simple country plots"""
 
         # *** 0. Drop NaN and get counts/countries
+        #_df = self.df_all.dropna(subset=['reportercountry'])
         _df = self.df_all.dropna(subset=['reportercountry'])
         countryCounts = _df.reportercountry.value_counts()
         counts = countryCounts.to_list()
@@ -336,7 +337,7 @@ class processOpenFDA:
         
         # *** 2. Make counts/labels below threshold and store rest as 'Other'
         for iCountry in countries[:threshKey]:
-            self.drawTopReactionsForLabel( df3, 'reportercountry', iCountry)
+            self.drawTopReactionsForLabel( _df, 'reportercountry', iCountry)
 
         # *** 3. Threshold efficiency
         reactions_temp = list(flatten(_df.reportercountry))
@@ -351,7 +352,7 @@ class processOpenFDA:
         encodedReactionVectors = {}
         for iCountry in countries:
             print('Process {}'.format(iCountry))
-            reactions_temp = list(flatten(df3[ df3.reportercountry==iCountry].patientReactions))
+            reactions_temp = list(flatten(_df[ _df.reportercountry==iCountry].patientReactions))
             threshKey, uniqueTemp = self.countUnique( reactions_temp)
             encoded = self.returnEncodedVector( uniqueTemp, allReactions)
             encodedReactionVectors[ iCountry ] = encoded
@@ -416,7 +417,7 @@ class processOpenFDA:
         _df_over65_reactions  = list(flatten(_df[ (_df.patientOnsetAge>65) & (_df.patientOnsetAge>-1) ]['patientReactions']))
         
         threshold=10
-        #print(type(df3_under45_reactions), np.shape(df3_under45_reactions))
+
         threshKey_under45, all_under45 = self.countUnique(_df_under45_reactions, threshold)
         all_reactions_under45, all_counts_under45 = self.returnCountsAndLabels( all_under45)
 
@@ -442,11 +443,14 @@ class processOpenFDA:
         # DELETEME?
         bins=np.arange(0, 50, 1)
         plt.hist( all_counts_under45, bins=bins)
-        plt.xlabel('Effect Incidence')
+        plt.xlabel('Effect Incidence (Under 45)')
         plt.ylabel('N_effects')
         plt.yscale('log')
+        plt.show()
         #turns out most reactions only have < 10 recorded instances. probably focus on things that are much more common
 
+        self.makeEfficiencyCurve(all_under45, 'All Reactions (Under 45)')
+                
         return
 
 
@@ -494,7 +498,7 @@ class processOpenFDA:
         """ make a bunch of plots for slices by indication"""
 
         indicationThreshold =14
-        _df = self.df_all.dropna(subset='drugIndication')
+        _df = self.df_all.dropna(subset=['drugIndication'])
         counts = _df.drugIndication.value_counts().to_list()
         indications = _df.drugIndication.value_counts().keys()
         reactions = _df.patientReactions.value_counts().keys()
@@ -520,11 +524,11 @@ class processOpenFDA:
             
         # *** 2. Make pie charts of most common GENERIC_NAME from a given INDICATION
         for iIndication in indications[:indicationThreshold]:
-            drawTopDrugsForLabel( _df, 'drugIndication', iIndication, 'GenericName', threshold=.925)
+            self.drawTopDrugsForLabel( _df, 'drugIndication', iIndication, 'GenericName', threshold=.925)
 
         # *** 3. Make pie charts of most common BRAND_NAME from a given INDICATION
         for iIndication in indications[:indicationThreshold]:
-            drawTopDrugsForLabel( _df, 'drugIndication', iIndication, 'BrandName', threshold=.925)
+            self.drawTopDrugsForLabel( _df, 'drugIndication', iIndication, 'BrandName', threshold=.925)
 
         return
 
@@ -556,13 +560,13 @@ class processOpenFDA:
 
         # ** D. Make some plots 
         for iGeneric in drugs[:drugThreshold]:
-            self.drawTopReactionsForLabel( df3, 'drugGenericName', iGeneric, threshold=drugThreshold)
+            self.drawTopReactionsForLabel( self.df_all, 'drugGenericName', iGeneric, threshold=drugThreshold)
     
         return
 
     
 
-    def returnOneHotVector(eventKeys, allKeys):
+    def returnOneHotVector(self, eventKeys, allKeys):
         """function to create one-hot encoded vector of drug names for calculating correlation"""
     
         _oneHotVector=[]
@@ -580,7 +584,7 @@ class processOpenFDA:
         return _oneHotVector
 
 
-    def findCorrelatedDrugs(df_matrix, lowCorrThreshold= 0.25):
+    def findCorrelatedDrugs(self, df_matrix, lowCorrThreshold= 0.25):
         """function that returns drug names if 0.1 < correlation < 1.0"""
     
         for iGeneric in df_matrix.columns:
@@ -639,7 +643,7 @@ class processOpenFDA:
         _df_corr = pd.DataFrame( genericsVectors, columns = topGenerics)
         _df_corrMatrix = _df_corr.corr(method ='pearson') 
 
-        self.findCorrelatedDrugs( df4_corrMatrix)
+        self.findCorrelatedDrugs( _df_corrMatrix)
 
 
     def findMultiDrugs(self):
@@ -671,7 +675,7 @@ class processOpenFDA:
         return
     
         
-    def vectorEncoder(patientReactions, allReactions):
+    def vectorEncoder(self, patientReactions, allReactions):
         """function to create encoded vector as new column"""
 
         if drugCategory in patientInfo['drug'][0]:
@@ -719,7 +723,7 @@ class processOpenFDA:
 
         _df['indicationClusterLabel'] = _df.apply( lambda x: kmeans.predict( [x.encodedIndicationVector]), axis=1)
         #kmeans.predict( df4.encodedIndicationVector[0])
-        set(list(flatten(df4[ df4.indicationClusterLabel==9].drugIndication)))
+        set(list(flatten(_df[ _df.indicationClusterLabel==9].drugIndication)))
 
         return
 
@@ -727,14 +731,14 @@ class processOpenFDA:
     def devSeriousnessCategory(self, category):
         """dev function to start playing around with seriousness category"""
 
-        _df = df3.dropna(subset=['seriousness{}'.format(category)])
+        _df = self.df_all.dropna(subset=['seriousness{}'.format(category)])
         key, unique = self.countUnique( list(flatten(  _df.patientReactions)))
 
         plt.hist(np.array(unique)[:,1].astype(np.int), bins=np.arange(0,50,1))
         plt.yscale('log')
         plt.show()
         
-        self.makeEfficiencyCurve( unique, 'Adverse Reactions ({})'.format(category)))
+        self.makeEfficiencyCurve( unique, 'Adverse Reactions ({})'.format(category))
         print( np.array(unique)[:15,0])
 
         plt.hist( _df.drugIndication.value_counts().values, bins=np.arange(0,50,1), alpha=.5)
