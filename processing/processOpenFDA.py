@@ -29,7 +29,8 @@
 # X --> Learn what seriousness reporting means
 # X --> find common drugs, show 
 #  --> make graphs for different seriousness categories: most common generics, most common brands, most common side effects
-#  --> turn into class. can use class to run over all files OR run over subset (e.g. one year) to make time-trends
+#  X --> turn into class.
+# --> use class to run over all files OR run over subset (e.g. one year) to make time-trends
 #  --> make time-trend of adverse events for a particular drug. split by adverse categories
 #  X --> make encoded vector of adverse effects. run k-means cluster to see if "areas" emerge- could classify drugs. DOESN'T WORK
 #  --> drugWatcher : code that uses apply(lambda) where lambda calculate timeToDouble/timeToSomeThreshold 
@@ -64,9 +65,12 @@ class processOpenFDA:
         if os.path.isfile( self.inputSource ): # user passes single file
             self.loadSingleFile( self.inputSource)
         elif os.path.isdir( self.inputSource): # user passes a directory
-            print("+++ I'm not ready for processing directories!!!")
-            exit()
+            for dirpath, dirnames, filenames in os.walk( self.inputSource ):
+                for filename in [f for f in filenames if f.endswith(".json.zip")]:
+                    #print (os.path.join(dirpath, filename))
+                    self.loadSingleFile( os.path.join(dirpath, filename) )
 
+                        
         return
 
 
