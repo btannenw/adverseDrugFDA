@@ -50,12 +50,12 @@ from sklearn.cluster import KMeans
 
 class processOpenFDA:
 
-    def __init__(self, inputSource):
+    def __init__(self, inputSource, verbose=False):
         """auto-intialization of processOpenFDA class"""
 
         self.inputSource = inputSource
         self.df_all = []
-
+        self.verbose= verbose
 
     def loadTables(self):
         """ load either single file or all files in a given directory """
@@ -65,11 +65,52 @@ class processOpenFDA:
         if os.path.isfile( self.inputSource ): # user passes single file
             self.loadSingleFile( self.inputSource)
         elif os.path.isdir( self.inputSource): # user passes a directory
+            nfiles = 0
             for dirpath, dirnames, filenames in os.walk( self.inputSource ):
                 for filename in [f for f in filenames if f.endswith(".json.zip")]:
                     #print (os.path.join(dirpath, filename))
                     self.loadSingleFile( os.path.join(dirpath, filename) )
+                for filename in [f for f in filenames if f.endswith(".csv")]:
+                    if 'All-other' in filename:
+                        continue
+                    if int(filename.split('-')[0])<2009:
+                        continue
+                    #if nfiles > 100:
+                    if nfiles > 10:
+                        continue
 
+                    print ("nfiles: {}, {}".format(nfiles, os.path.join(dirpath, filename)))
+                    
+                    self.loadSingleFile( os.path.join(dirpath, filename) )
+                    nfiles += 1
+                    
+                                            
+        return
+
+    def loadData(self):
+        """load data of single file for example"""
+        self.inputSource = '/home/btannenw/Desktop/life/adverseDrugFDA/data/2011-Q3/drug-event-0001-of-0012.json.zip'
+        self.loadTables()
+        self.addColumns()
+        
+        return
+    
+    def processSequentialFilesFromDirectory(self, outputDir):
+        """ load either single file or all files in a given directory """
+
+        if ( not os.path.exists(outputDir) ):
+            print( "Specified output directory ({0}) DNE.\nCREATING NOW".format(outputDir))
+            os.system("mkdir {0}".format(outputDir))
+        
+        if os.path.isdir( self.inputSource): # user passes a directory
+            for dirpath, dirnames, filenames in os.walk( self.inputSource ):
+                for filename in [f for f in filenames if f.endswith(".json.zip")]:
+                    print (os.path.join(dirpath, filename))
+                    self.df_all = []
+                    self.loadSingleFile( os.path.join(dirpath, filename) )
+                    print(filename, len(self.df_all))
+                    self.addColumns()
+                    self.saveColumnsToCSV(outputDir, os.path.join(dirpath, filename), ['drugGenericName', 'patientReactions'])
                         
         return
 
@@ -80,14 +121,18 @@ class processOpenFDA:
         data = []
 
         # *** 1. Open single file from zipped json
-        with zipfile.ZipFile(filename, 'r') as z:
-            for filename in z.namelist():  
-                print(filename)  
-                with z.open(filename) as f:  
-                    data = f.read()  
-                    d = json.loads(data.decode("utf-8"))  
-                    _df = pd.DataFrame(d['results'])
-                    
+        if 'json.zip' in filename:
+            with zipfile.ZipFile(filename, 'r') as z:
+                for filename in z.namelist():  
+                    if self.verbose:
+                        print(filename)  
+                    with z.open(filename) as f:  
+                        data = f.read()  
+                        d = json.loads(data.decode("utf-8"))  
+                        _df = pd.DataFrame(d['results'])
+        elif '.csv' in filename:
+            _df = pd.read_csv( filename )
+                
         # *** 2. Append to global df_all
         if type(self.df_all)==list:
             self.df_all = _df
@@ -298,9 +343,9 @@ class processOpenFDA:
     def addColumns(self):
         """ add some columns to dataframe via apply"""
 
-        print("Number entries (all): {}".format(len(self.df_all)))
+        #print("Number entries (all): {}".format(len(self.df_all)))
         self.df_all = self.df_all.dropna(subset=['primarysource', 'patient'])
-        print("Number entries (w/ patient data): {}".format(len(self.df_all)))
+        #print("Number entries (w/ patient data): {}".format(len(self.df_all)))
 
         self.df_all['reportercountry'] = self.df_all.apply( lambda x: self.imputePrimarySource( x['primarysource'], 'reportercountry'), axis=1)
         self.df_all['reporterqualification'] = self.df_all.apply( lambda x: self.imputePrimarySource( x['primarysource'], 'qualification'), axis=1)
@@ -317,10 +362,10 @@ class processOpenFDA:
         self.df_all['drugActiveSubstance'] = self.df_all.apply( lambda x: self.getDrugData( x['patient'], 'drug', 'activesubstance', 'activesubstancename'), axis=1)
 
         self.df_all = self.df_all.dropna(subset=['drugSubstanceName'])
-        print("Number entries (w/ substance data): {}".format(len(self.df_all)))
+        #print("Number entries (w/ substance data): {}".format(len(self.df_all)))
 
 
-    def makeCountryPlots(self, threshold=0.925, verbose=True):
+    def makeCountryPlots(self, threshold=0.925, verbose=False):
         """ function for some simple country plots"""
 
         # *** 0. Drop NaN and get counts/countries
@@ -331,8 +376,9 @@ class processOpenFDA:
         countries = countryCounts.keys()
         
         self.makePiePlot(counts, countries, threshold=threshold, title='% Response by Country', verbose=verbose)
-        
-        print(counts)
+
+        if self.verbose:
+            print(counts)
         print(countries)
 
         # *** 1. Find threshold break
@@ -355,7 +401,8 @@ class processOpenFDA:
         # ** B. make dict of encoded vectors
         encodedReactionVectors = {}
         for iCountry in countries:
-            print('Process {}'.format(iCountry))
+            if self.verbose:
+                print('Process {}'.format(iCountry))
             reactions_temp = list(flatten(_df[ _df.reportercountry==iCountry].patientReactions))
             threshKey, uniqueTemp = self.countUnique( reactions_temp)
             encoded = self.returnEncodedVector( uniqueTemp, allReactions)
@@ -468,7 +515,9 @@ class processOpenFDA:
         else:
             _df = _df[ (_df[ columnKey ] == keyValue) ]
         _reactions = list(flatten(_df['patientReactions']))
-
+        #if type(_df['patientReactions'][0])==str:
+        #    _reactions = list(flatten(_df['patientReactions'].to_list))
+        
         # *** 2. Get unique counts/labels
         _theshKey, _all = self.countUnique(_reactions, threshold)
         _all_reactions, _all_counts = self.returnCountsAndLabels( _all)
@@ -489,7 +538,8 @@ class processOpenFDA:
         # *** 2. Get unique counts/labels
         _threshKey, _all = self.countUnique(_drugs, threshold)
         _all_drugs, _all_counts = self.returnCountsAndLabels( _all)
-        print(len(_df_key), len(_drugs), len(_all))
+        if self.verbose:
+            print(len(_df_key), len(_drugs), len(_all))
 
         # *** 3. Make pie chart
         self.makePiePlot(_all_counts, _all_drugs, threshold=threshold, title='Top Drug {}: {}'.format(drugName, keyValue), 
@@ -498,7 +548,7 @@ class processOpenFDA:
         return
 
     
-    def drugIndicationStudies(self):
+    def drugIndicationStudies(self, depVariable):
         """ make a bunch of plots for slices by indication"""
 
         indicationThreshold =14
@@ -506,8 +556,9 @@ class processOpenFDA:
         counts = _df.drugIndication.value_counts().to_list()
         indications = _df.drugIndication.value_counts().keys()
         reactions = _df.patientReactions.value_counts().keys()
-        print(len(indications))
-        print(len(reactions))
+        if self.verbose:
+            print(len(indications))
+            print(len(reactions))
         threshKey = self.returnThresholdPoint(counts, indications, indicationThreshold, verbose=True)
         topIndications = indications[:indicationThreshold].to_list()
 
@@ -515,6 +566,8 @@ class processOpenFDA:
         plt.hist(counts, bins=np.arange(0,400,10))
         plt.yscale('log')
         50/sum(counts)*100 # threshold, pick causes ~above this percentage
+        plt.xlabel('Drug Indications')
+        plt.ylabel('Unique Counts')
         plt.show()
 
         reactions_temp = list(flatten(_df.patientReactions))
@@ -523,16 +576,19 @@ class processOpenFDA:
 
 
         # *** 1. Make pie charts of most common REACTIONS from a given INDICATION
-        for iIndication in indications[:indicationThreshold]:
-            self.drawTopReactionsForLabel( _df, 'drugIndication', iIndication, threshold=10)
+        if depVariable == 'reactions':
+            for iIndication in indications[:indicationThreshold]:
+                self.drawTopReactionsForLabel( _df, 'drugIndication', iIndication, threshold=10)
             
         # *** 2. Make pie charts of most common GENERIC_NAME from a given INDICATION
-        for iIndication in indications[:indicationThreshold]:
-            self.drawTopDrugsForLabel( _df, 'drugIndication', iIndication, 'GenericName', threshold=.925)
+        if depVariable == 'genericNames':
+            for iIndication in indications[:indicationThreshold]:
+                self.drawTopDrugsForLabel( _df, 'drugIndication', iIndication, 'GenericName', threshold=.925)
 
         # *** 3. Make pie charts of most common BRAND_NAME from a given INDICATION
-        for iIndication in indications[:indicationThreshold]:
-            self.drawTopDrugsForLabel( _df, 'drugIndication', iIndication, 'BrandName', threshold=.925)
+        if depVariable == 'brandNames':
+            for iIndication in indications[:indicationThreshold]:
+                self.drawTopDrugsForLabel( _df, 'drugIndication', iIndication, 'BrandName', threshold=.925)
 
         return
 
@@ -761,3 +817,44 @@ class processOpenFDA:
         self.devSeriousnessCategory('hospitalization')
         self.devSeriousnessCategory('lifethreatening')
 
+
+
+    def returnGenericEncoded(self, testGeneric):
+    
+        #make reaction fingerprint for drug (active substance)
+        _df = self.df_all.dropna(subset=['drugGenericName'])
+        print("Number generic names/combos: {}".format(len(_df.drugGenericName.value_counts().keys())))
+
+        _df = _df[ (_df.drugGenericName.str.join('-').str.find(testGeneric) != -1)]
+        _reactions = list(flatten(_df['patientReactions']))
+        #if type(_df['patientReactions'][0])==str:
+        #_reactions = list(flatten(_df['patientReactions'].to_list))
+
+        self.drawTopReactionsForLabel( _df, 'drugGenericName', testGeneric, threshold=100)
+        
+        # *** 2. Get unique counts/labels              
+        print("Number of unique reactions to {}: {}".format(testGeneric, len(_reactions)))
+        _theshKey, _uniqueGeneric = self.countUnique(_reactions, 10)
+
+        # *** 3. Make encdoed vector
+        _all = set(list(flatten(self.df_all.patientReactions)))
+        encoded = self.returnEncodedVector( _uniqueGeneric, _all)
+
+        print( encoded.dot(encoded), sum(encoded))
+        print(encoded)    
+    
+        return encoded
+
+
+    def saveColumnsToCSV(self, dirName, fileName, columnsToSave):
+        """ function to save some minimal amount of data in .csv"""
+
+        print(fileName.split('/'))
+        outName =  fileName.split('/')[7] + '_' + fileName.split('/')[8].split('drug-event-')[1].split('.')[0]
+        
+        _df = self.df_all[ columnsToSave ]
+        _df = _df.dropna(subset=columnsToSave)
+        _df.to_csv('{}/{}_{}.csv'.format(dirName, outName, '-'.join(columnsToSave)), index=False)
+
+        return
+                    
